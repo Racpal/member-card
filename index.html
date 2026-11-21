@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Member card">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#2f803f" id="theme">
+<title>Member card</title>
+<style>
+  html, body { margin: 0; height: 100%; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: #eef1ef; color: #1b2430; display: flex; flex-direction: column; align-items: center; }
+  .card { position: relative; overflow: hidden; width: min(92vw, 400px); margin-top: max(5vh, env(safe-area-inset-top)); border-radius: 28px; background: #2f803f; color: #fff; text-align: center; padding: 30px 22px 26px; box-sizing: border-box; }
+  .blob { position: absolute; border-radius: 50%; }
+  .inside { position: relative; }
+  .shop { font-size: 24px; font-weight: 600; letter-spacing: 0.3px; }
+  .kind { font-size: 15px; opacity: 0.85; margin-top: 3px; }
+  .name { font-size: 40px; font-weight: 600; margin-top: 36px; overflow-wrap: anywhere; }
+  .bars { background: #fff; border-radius: 18px; margin-top: 30px; padding: 22px 0; }
+  .bars svg { display: block; width: 100%; height: 110px; }
+  .help { width: min(92vw, 400px); font-size: 15px; color: #4a5560; line-height: 1.5; margin: 22px 0 30px; }
+  .help b { color: #1b2430; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="card" id="card">
+  <div class="blob" style="width: 62%; padding-top: 62%; left: -22%; top: -14%; background: rgba(255,255,255,0.10);"></div>
+  <div class="blob" style="width: 42%; padding-top: 42%; right: -14%; top: 34%; background: rgba(255,255,255,0.08);"></div>
+  <div class="blob" style="width: 56%; padding-top: 56%; left: 16%; bottom: -30%; background: rgba(0,0,0,0.12);"></div>
+  <div class="inside">
+    <div class="shop" id="shop"></div>
+    <div class="kind">Member card</div>
+    <div class="name" id="name"></div>
+    <div class="bars" id="bars-box"><svg id="bars" preserveAspectRatio="none"></svg></div>
+  </div>
+</div>
+<div class="help" id="help">
+  <p>Show this at the till to collect and use your points.</p>
+  <p><b>Keep it on your phone</b>, or take a screenshot:</p>
+  <p><b>iPhone:</b> tap Share, then Add to Home Screen.</p>
+  <p><b>Android:</b> tap the menu, then Add to Home screen.</p>
+</div>
+<div class="help hidden" id="empty">
+  <p>Open this page from the QR code on your receipt to see your member card.</p>
+</div>
+<script>
+// A shop's member card, drawn from its own link: #c=<code>&n=<first name>&s=<shop>&k=<colour>. 
+var SAVED = "member_card_link"; // localStorage
+var QUIET = 12;                 // SOURCE: ISO/IEC 15417, a Code 128 quiet zone of at least 10 modules each side
+var PATTERNS = ["212222","222122","222221","121223","121322","131222","122213","122312","132212","221213","221312","231212","112232","122132","122231",
+  "113222","123122","123221","223211","221132","221231","213212","223112","312131","311222","321122","321221","312212","322112","322211","212123",
+  "212321","232121","111323","131123","131321","112313","132113","132311","211313","231113","231311","112133","112331","132131","113123","113321",
+  "133121","313121","211331","231131","213113","213311","213131","311123","311321","331121","312113","312311","332111","314111","221411","431111",
+  "111224","111422","121124","121421","141122","141221","112214","112412","122114","122411","142112","142211","241211","221114","413111","241112",
+  "134111","111242","121142","121241","114212","124112","124211","411212","421112","421211","212141","214121","412121","111143","111341","131141",
+  "114113","114311","411113","411311","113141","114131","311141","411131","211412","211214","211232","2331112"]; // SOURCE: ISO/IEC 15417, values 0 to 106
+
+function code128(text) { // Bar and space widths in modules, code set B: start, the characters, the check, stop
+  var values = [104];
+  var sum = 104;
+  for (var i = 0; i < text.length; i++) {
+    var value = text.charCodeAt(i) - 32;
+    values.push(value);
+    sum += value * (i + 1);
+  }
+  values.push(sum % 103);
+  values.push(106);
+  var widths = [];
+  for (var j = 0; j < values.length; j++) {
+    var pattern = PATTERNS[values[j]];
+    for (var k = 0; k < pattern.length; k++) {
+      widths.push(Number(pattern.charAt(k)));
+    }
+  }
+  return widths;
+}
+
+function drawBars(svg, text) { 
+  var widths = code128(text);
+  var modules = 2 * QUIET;
+  for (var i = 0; i < widths.length; i++) {
+    modules += widths[i];
+  }
+  svg.setAttribute("viewBox", "0 0 " + modules + " 60");
+  var x = QUIET;
+  var parts = [];
+  for (var j = 0; j < widths.length; j++) {
+    if (j % 2 === 0) {
+      parts.push("<rect x='" + x + "' y='0' width='" + widths[j] + "' height='60' fill='#000'/>");
+    }
+    x += widths[j];
+  }
+  svg.innerHTML = parts.join("");
+}
+
+function readLink(hash) { // {code, name, shop, colour} from "#c=…&n=…", or null when it isn't a card's link
+  var found = {};
+  var pairs = hash.replace(/^#/, "").split("&");
+  for (var i = 0; i < pairs.length; i++) {
+    var cut = pairs[i].indexOf("=");
+    if (cut > 0) {
+      try { found[pairs[i].slice(0, cut)] = decodeURIComponent(pairs[i].slice(cut + 1).replace(/\+/g, " ")); } catch (e) { }
+    }
+  }
+  var code = (found.c || "").toUpperCase();
+  if (!/^[A-Z0-9]{4,40}$/.test(code)) {
+    return null; // Letters and digits only
+  }
+  return {
+    code: code,
+    name: (found.n || "").slice(0, 30),
+    shop: (found.s || "").slice(0, 40),
+    colour: /^[0-9a-fA-F]{6}$/.test(found.k || "") ? "#" + found.k : "#2f803f"
+  };
+}
+
+function savedLink() { // The last good link this phone opened, "" if none
+  try { return localStorage.getItem(SAVED) || ""; } catch (e) { return ""; }
+}
+
+function show() { // Draw the card from the link, or the last one saved
+  var hash = location.hash;
+  var card = readLink(hash);
+  if (card === null && savedLink() !== "") {
+    hash = savedLink();
+    card = readLink(hash);
+  }
+  document.getElementById("card").classList.toggle("hidden", card === null);
+  document.getElementById("help").classList.toggle("hidden", card === null);
+  document.getElementById("empty").classList.toggle("hidden", card !== null);
+  if (card === null) {
+    return;
+  }
+  try { localStorage.setItem(SAVED, hash); } catch (e) { }
+  document.getElementById("card").style.background = card.colour;
+  document.getElementById("theme").setAttribute("content", card.colour);
+  document.getElementById("shop").textContent = card.shop;
+  document.getElementById("name").textContent = card.name;
+  document.getElementById("name").classList.toggle("hidden", card.name === "");
+  document.title = card.shop === "" ? "Member card" : card.shop + " card";
+  drawBars(document.getElementById("bars"), card.code);
+}
+
+window.addEventListener("hashchange", show);
+show();
+</script>
+</body>
+</html>
